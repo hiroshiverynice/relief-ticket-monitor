@@ -1,0 +1,60 @@
+name: RELIEF Ticket Monitor
+
+on:
+  schedule:
+    # 5分ごとに実行（GitHub Actionsの最小間隔）
+    - cron: "*/5 * * * *"
+  workflow_dispatch: # 手動実行も可能
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ hashFiles('requirements.txt') }}
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-v1
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          playwright install chromium --with-deps
+
+      # state.json を前回の実行から復元
+      - name: Restore state
+        uses: actions/cache/restore@v4
+        with:
+          path: state.json
+          key: monitor-state-dummy
+          restore-keys: monitor-state-
+
+      - name: Run monitor (single check)
+        env:
+          ARTISTS: ${{ vars.ARTISTS || 'Travis Japan,SixTONES' }}
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
+          DEBUG: "false"
+        run: python monitor.py --once
+
+      # state.json を保存（run_id でユニークキー）
+      - name: Save state
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: state.json
+          key: monitor-state-${{ github.run_id }}
